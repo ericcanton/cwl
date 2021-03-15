@@ -1,0 +1,24 @@
+name: cwl
+version: "0.1"
+author: Eric Canton <eric.d.canton@gmail.com>
+about: Pretty, UNIX-like interaction with AWS CloudWatch Logs.
+
+subcommands:
+    - group:
+        about: Operations for CloudWatch Log Groups.
+        subcommands:
+            - ls:
+                about: List CloudWatch Log Groups.
+    - stream:
+        about: Operations for CloudWatch Log Streams.
+        subcommands:
+            - ls:
+                about: List CloudWatch Log Streams for the -g group.
+                args:
+                    - group_name:
+                        short: g
+                        long: group
+                        required: true
+                        help: Name of the Log Group to which the stream belongs.
+
+
