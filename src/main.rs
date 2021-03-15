@@ -18,9 +18,14 @@ async fn main() {
             }
         }
     } else if let Some(st) = matches.subcommand_matches("stream") {
-        if st.subcommand_matches("ls").is_some() {
-            println!("Currently only supports group ls...");
-            process::exit(1);
+        if let Some(ls) = st.subcommand_matches("ls") {
+            let group_name = ls.value_of("group_name").unwrap();
+            let group = LogGroup::new(String::from(group));
+
+            match logs::ls_log_streams_for(&group).await {
+                Ok(_) => process::exit(0),
+                Err(_) => process::exit(1)
+            }
         } else {
             println!("Try again with ls subcommand.");
         }
