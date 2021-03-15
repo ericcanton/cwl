@@ -20,5 +20,6 @@ subcommands:
                         long: group
                         required: true
                         help: Name of the Log Group to which the stream belongs.
+                        takes_value: true
 
 

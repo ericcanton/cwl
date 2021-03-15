@@ -1,4 +1,5 @@
 use std::fmt;
+use std::rc::Rc;
 
 use colored::*;
 
@@ -8,6 +9,7 @@ use rusoto_core::Region;
 use rusoto_logs::{
     CloudWatchLogs, CloudWatchLogsClient, DescribeLogGroupsRequest, DescribeLogGroupsResponse,
     DescribeLogStreamsRequest, LogGroup as rusoto_LogGroup, LogStream as rusoto_LogStream,
+    OutputLogEvent, GetLogEventsRequest, GetLogEventsResponse
 };
 
 
@@ -18,12 +20,14 @@ use rusoto_logs::{
 ======================================================= */ 
 pub enum AmazonService {
     Lambda,
+    Unknown,
 }
 
 impl fmt::Display for AmazonService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AmazonService::Lambda => write!(f, "{}", "AWS Lambda".green())
+            AmazonService::Lambda => write!(f, "{}", "AWS Lambda".green()),
+            AmazonService::Unknown => write!(f, "{}", "Unknown".red().on_yellow()),
         }
     }
 }
@@ -34,22 +38,49 @@ pub struct LogGroup {
     stored_bytes: Option<i64>,
 }
 
+impl LogGroup {
+    pub fn new(name: String) -> Self {
+        let log_service = match name.contains("/aws/lambda/") {
+            true => AmazonService::Lambda,
+            false => AmazonService::Unknown,
+        };
+
+        Self {
+            name,
+            service: log_service,
+            stored_bytes: None
+        }
+    }
+}
+
+impl Default for LogGroup {
+    fn default() -> Self {
+        Self {
+            name: String::from(""),
+            service: AmazonService::Unknown,
+            stored_bytes: None,
+        }
+    }
+
+}
+
 impl From<rusoto_LogGroup> for LogGroup {
     fn from(lg: rusoto_LogGroup) -> Self {
-        let log_name = lg.log_group_name.unwrap();
+        let mut new_lg = LogGroup::new(lg.log_group_name.unwrap());
 
-        LogGroup { 
-            name: log_name,
-            service: AmazonService::Lambda,
-            stored_bytes: lg.stored_bytes,
-        }
+        new_lg.stored_bytes = lg.stored_bytes;
+
+        new_lg
     }
 }
 
 impl fmt::Display for LogGroup {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Name: {}\nService: {}\nStored bytes: {}\n================\n", 
-            self.name.blue().bold(), self.service, self.stored_bytes.unwrap_or(0).to_string().red())
+        write!(f, "Name: {}\nService: {}\nStored bytes: {}", 
+            self.name.blue().bold(),
+            self.service,
+            self.stored_bytes.unwrap_or(-1).to_string().red()
+        )
     }
 }
 
@@ -58,27 +89,65 @@ impl fmt::Display for LogGroup {
     Structs, Enums, Traits for Log Streams
 
 ======================================================= */ 
-// pub struct LogStream {
-//     name: String,
-//     log_group: LogGroup,
-// }
+#[derive(Default)]            
+pub struct LogStream {
+    name: String,
+    group: Rc<LogGroup>,
+    last_event_ts: Option<i64>,
+    last_ingest_ts: Option<i64>,
+    events_page: Option<Vec<OutputLogEvent>>,
+    next_page: Option<String>,
+    prev_page: Option<String>,
+}
 
-// impl From<rusoto_LogStream> for LogStream {
-//     fn from(lg: rusoto_LogStream) -> Self {
+impl LogStream {
+    pub fn new(name: String, group: Rc<LogGroup>) -> Self {
+        Self {
+            name,
+            group, 
+            ..Default::default() 
+        }
+    }
 
-//         LogStream { 
-//             name: log_name,
-//             log_group: 
-//         }
-//     }
-// }
 
-// impl fmt::Display for LogStream {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(f, "Name: {}\n================\n", 
-//             self.name.blue())
-//     }
-// }
+    pub async fn get_log_stream_events(&mut self) -> Result<(), ()> {
+        let client = CloudWatchLogsClient::new(Region::UsEast1);
+
+        let mut gle_req = GetLogEventsRequest {
+            log_group_name: String::from(&self.group.name),
+            log_stream_name: String::from(&self.name),
+            ..Default::default()
+        };
+
+        // ugly. How to do better?
+        if let Some(page) = &self.next_page {
+            gle_req.start_from_head = Some(true);
+            gle_req.next_token = Some(String::from(page))
+        } 
+        //
+
+        let log_event_resp = client.get_log_events(gle_req).await;
+
+        match log_event_resp {
+            Ok(event_vec) => {
+                self.events_page = event_vec.events;
+                self.next_page = event_vec.next_forward_token;
+                self.prev_page = event_vec.next_backward_token;
+
+                Ok(())
+            },
+            Err(_) => Err(())
+        }
+    }
+
+}
+
+impl fmt::Display for LogStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Name: {}", 
+            self.name.green())
+    }
+}
 
 
 /* =======================================================
@@ -88,10 +157,7 @@ impl fmt::Display for LogGroup {
 ======================================================= */ 
 pub async fn get_log_groups() -> Option<Vec<LogGroup>> {
     let client = CloudWatchLogsClient::new(Region::UsEast1);
-
-    // We need the log stream to get the sequence token
     let req: DescribeLogGroupsRequest = Default::default();
-
     let resp = client.describe_log_groups(req).await;
 
     match resp {
@@ -116,7 +182,7 @@ pub async fn ls_log_groups() -> Result<(), ()> {
             println!("=== ls: Log Groups ==========");
             println!("=============================\n");
             for group in log_groups {
-                println!("{}", group);
+                println!("{}\n================\n", group);
             }
             Ok(())
         } 
@@ -127,26 +193,56 @@ pub async fn ls_log_groups() -> Result<(), ()> {
     }
 }
 
-// pub async fn list_log_streams_for_group(group: LogGroup) -> Option<Vec<LogStream>> {
-//     let client = CloudWatchLogsClient::new(Region::UsEast1);
+pub async fn get_log_streams_for(group: Rc<LogGroup>) -> Option<Vec<LogStream>> {
+    let client = CloudWatchLogsClient::new(Region::UsEast1);
 
-//     // We need the log stream to get the sequence token
-//     let mut req: DescribeLogStreamsRequest = Default::default();
-//     req.log_group_name = group.name;
+    // We need the log stream to get the sequence token
+    let dls_req = DescribeLogStreamsRequest { 
+        log_group_name: String::from(&group.name),
+        ..Default::default()
+    };
 
-//     let resp = client.describe_log_streams(req).await;
+    let log_stream_resp = client.describe_log_streams(dls_req).await;
 
-//     match resp {
-//         Ok(log_groups) => {
-//             Some(
-//                 log_groups.log_streams
-//                     .unwrap()
-//                     .into_iter()
-//                     .map(|lg| lg.into())
-//                     .collect()
-//             )
-//         },
-//         Err(_) => None
+    match log_stream_resp {
+        Ok(streams) => {
+            Some(
+                streams.log_streams
+                    .unwrap()
+                    .into_iter()
+                    .map(|ls| 
+                        LogStream::new(
+                            ls.log_stream_name.unwrap(),
+                            Rc::clone(&group),
+                        ) 
+                    )
+                    .collect()
+            )
+        },
+        Err(_) => None
+    }
+}
 
-//     }
-// }
+
+pub async fn ls_log_streams_for(group: Rc<LogGroup>) -> Result<(), ()> {
+    println!("\n=============================");
+    println!("=== ls: Log Streams =========");
+    println!("=============================");
+    println!("for Log Group:");
+    println!("{}", &group);
+    println!("=============================\n");
+
+    match get_log_streams_for(group).await {
+        Some(log_streams) => {
+            // println!("...Log streams here....");
+            for stream in log_streams {
+                println!("{}", stream);
+            }
+            Ok(())
+        } 
+        None => {
+            println!("No log groups found!");
+            Err(())
+        }
+    }
+}
