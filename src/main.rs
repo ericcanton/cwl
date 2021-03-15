@@ -1,6 +1,7 @@
 mod logs;
 
 use std::process;
+use std::rc::Rc;
 
 use clap::{App, load_yaml};
  
@@ -20,9 +21,9 @@ async fn main() {
     } else if let Some(st) = matches.subcommand_matches("stream") {
         if let Some(ls) = st.subcommand_matches("ls") {
             let group_name = ls.value_of("group_name").unwrap();
-            let group = LogGroup::new(String::from(group));
+            let group = logs::LogGroup::new(String::from(group_name));
 
-            match logs::ls_log_streams_for(&group).await {
+            match logs::ls_log_streams_for(Rc::new(group)).await {
                 Ok(_) => process::exit(0),
                 Err(_) => process::exit(1)
             }
