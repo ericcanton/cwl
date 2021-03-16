@@ -108,38 +108,6 @@ impl LogStream {
             ..Default::default() 
         }
     }
-
-
-    pub async fn get_log_stream_events(&mut self) -> Result<(), ()> {
-        let client = CloudWatchLogsClient::new(Region::UsEast1);
-
-        let mut gle_req = GetLogEventsRequest {
-            log_group_name: String::from(&self.group.name),
-            log_stream_name: String::from(&self.name),
-            ..Default::default()
-        };
-
-        // ugly. How to do better?
-        if let Some(page) = &self.next_page {
-            gle_req.start_from_head = Some(true);
-            gle_req.next_token = Some(String::from(page))
-        } 
-        //
-
-        let log_event_resp = client.get_log_events(gle_req).await;
-
-        match log_event_resp {
-            Ok(event_vec) => {
-                self.events_page = event_vec.events;
-                self.next_page = event_vec.next_forward_token;
-                self.prev_page = event_vec.next_backward_token;
-
-                Ok(())
-            },
-            Err(_) => Err(())
-        }
-    }
-
 }
 
 impl fmt::Display for LogStream {
@@ -199,6 +167,8 @@ pub async fn get_log_streams_for(group: Rc<LogGroup>) -> Option<Vec<LogStream>> 
     // We need the log stream to get the sequence token
     let dls_req = DescribeLogStreamsRequest { 
         log_group_name: String::from(&group.name),
+        order_by: Some(String::from("LastEventTime")),
+        descending: Some(true),
         ..Default::default()
     };
 
@@ -235,7 +205,7 @@ pub async fn ls_log_streams_for(group: Rc<LogGroup>) -> Result<(), ()> {
     match get_log_streams_for(group).await {
         Some(log_streams) => {
             // println!("...Log streams here....");
-            for stream in log_streams {
+            for stream in log_streams.iter().rev() {
                 println!("{}", stream);
             }
             Ok(())
@@ -277,16 +247,17 @@ pub async fn ls_log_events_for(stream: LogStream) -> Result<(), ()> {
     match get_log_events_for(stream).await {
         Some(log_events) => {
             let mut i = 0;
-            // Cannot .enumerate() due to lack of trait...
             let n = log_events.len();
+
+            // log_events.iter().enumerate() causes problems for the println event.message
             for event in log_events {
                 if i == 0 {
-                    println!("Timestamp: {}\nIngestion: {}\n=== BEGIN STREAM ===\n",
+                    println!("Timestamp: {}ms\nIngestion: {}ms\n=== BEGIN STREAM ===\n",
                         event.timestamp.unwrap_or(-1).to_string().red(),
                         event.ingestion_time.unwrap_or(-1).to_string().red()
                     );
                 } else if i == n-1 {
-                    println!("\n=== END STREAM ===\nTimestamp: {}\nIngestion: {}\n",
+                    println!("\n=== END STREAM ===\nTimestamp: {}ms\nIngestion: {}ms\n",
                         event.timestamp.unwrap_or(-1).to_string().red(),
                         event.ingestion_time.unwrap_or(-1).to_string().red()
                     );
