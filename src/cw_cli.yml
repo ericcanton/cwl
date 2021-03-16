@@ -8,14 +8,14 @@ subcommands:
         about: ls commands for CWLogs.
         args:
             - group_name:
-                help: Name of the Log Group to which the stream belongs.
+                help: Name of Log Group you want to ls streams for.
                 short: g
                 long: group
                 required: false
                 takes_value: true
 
             - stream_name:
-                help: List CloudWatch Log Streams for the -g group.
+                help: List CloudWatch Log Streams for the -g group. (Requires -g.)
                 short: s
                 long: stream
                 required: false
