@@ -76,7 +76,7 @@ impl From<rusoto_LogGroup> for LogGroup {
 
 impl fmt::Display for LogGroup {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Name: {}\nService: {}\nStored bytes: {}", 
+        write!(f, "Group Name: {}\nService: {}\nStored bytes: {}", 
             self.name.blue().bold(),
             self.service,
             self.stored_bytes.unwrap_or(-1).to_string().red()
@@ -144,7 +144,7 @@ impl LogStream {
 
 impl fmt::Display for LogStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Name: {}", 
+        write!(f, "Stream Name: {}", 
             self.name.green())
     }
 }
