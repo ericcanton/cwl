@@ -256,17 +256,18 @@ pub async fn ls_log_events_for(stream: LogStream) -> Result<(), ()> {
                         event.timestamp.unwrap_or(-1).to_string().red(),
                         event.ingestion_time.unwrap_or(-1).to_string().red()
                     );
-                } else if i == n-1 {
-                    println!("\n=== END STREAM ===\nTimestamp: {}ms\nIngestion: {}ms\n",
-                        event.timestamp.unwrap_or(-1).to_string().red(),
-                        event.ingestion_time.unwrap_or(-1).to_string().red()
-                    );
-
                 }
 
                 println!("{}", 
                     event.message.unwrap_or_default()
                 );
+
+                if i == n-1 {
+                    println!("\n=== END STREAM ===\nTimestamp: {}ms\nIngestion: {}ms\n",
+                        event.timestamp.unwrap_or(-1).to_string().red(),
+                        event.ingestion_time.unwrap_or(-1).to_string().red()
+                    );
+                }
 
                 i += 1;
             }
