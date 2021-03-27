@@ -1,6 +1,6 @@
 # cwl: CloudWatch Logs CLI
 
-Colorful printing of AWS CloudWatch Logs. The aim is to be somewhat `ls`-like in functionality.  
+Colorful printing of AWS CloudWatch Logs.
 
 Check out `./cwl ls --help` for more info.
 
